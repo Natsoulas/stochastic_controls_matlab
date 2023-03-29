@@ -323,7 +323,32 @@ yline(2*sigma_vu_control19,"LineWidth",3,"Color","r")
 yline(-2*sigma_vu_control19,"LineWidth",3,"Color","r")
 xlabel("steps (Ts = 0.01)")
 ylabel("v_u - control signal boatspeed")
+%% Q 1.10 Comparison of New Variances of outputs and control signals for 1.4 and 1.9 cl systems
+% I indeed do observe a big difference in the new variances and the old 
+% variances. The new variances of the outputs and control signals are much 
+% larger in 1.9 compared to those observed in 1.4. This can be seen by
+% putting figures 2 and 9 side by side and reading their y-axes to visually
+% see the factor of 2 to 5 difference by which the  1.9 results vary much
+% more largely.
+
+%% Q 1.11: Ordinary KF implementation hardware limitations?
+% There are many hardware limitations that exist in implementing an ordinary 
+% kalman filter. For one, the memory on whatever computer or chip you are 
+% running it on is a limitation as the KF needs to store a bunch of 
+% matrices and values each time it make an estimate. This is especially 
+% true when dealing with large state spaces and measurement spaces. Another
+% limitation is also computational with the computer processor needing to
+% be fast enough to allow for effective estimation via performing really
+% fast linear algebra operations. Measurement noise can also be a
+% limitation as the ordinary kalman filter algorithm is for gaussian white
+% noise. Sampling time also needs to be relatively small enough for the
+% estimation to work. Lets say if measurements were provided every 1 hour,
+% that might be too slow for a boat...
+
+%% Q 1.12 Design a stationary predictive KF, find K_inf, what is cov of correlated noise signals?
+
 %%
+
 function Bd_s_column = ode_bd(t,~)
     v_u = 15;
     v_w = 15;
@@ -447,22 +472,34 @@ function w_dep = dependent_noise(R_meas,R1eta,xi_0,steps)
     end
 end
 
+function [w_k,e_k,xi_k] = noises(R_meas,R1eta, xi_k)
+    e_k = chol(R_meas,"lower")*randn(2,1);
+    w_k = [1,0,0;0.2,0.8,0;0.1,0,0.7]*xi_k + [0,0;0,0;0.01,-0.01]*e_k;
+    eta_k = chol(R1eta,"lower")*randn(3,1);
+    xi_kplus1 = [0,0,0;0,0,0;0,0,6/13]*xi_k + eta_k;
+    xi_k = xi_kplus1;
+end
+
 function [state, output, control] = simulate_cl_19(A,B,L,H,R_sys,R_meas,num_steps,num_sims)
 
 %sigma_theta = sqrt(Rtheta);
 state = zeros(num_steps,num_sims,3);
 output = zeros(num_steps,num_sims,2);
 control = zeros(num_steps,num_sims,2);
+R_sys = R_sys;
+R1eta = [1,0,0;0.2,0.8,0;0.1,0,0.7];
 for sim = 1:1:num_sims
     z0 = [normrnd(0,1);normrnd(0,1);normrnd(0,0.5)];
     zk = z0;
+    xi_k = zeros(3,1);
     for step = 1:1:num_steps 
-        noise_k = chol(R_sys,"lower")*randn(3,1);
-        measnoise_k = chol(R_meas,"lower")*randn(2,1);
+        %noise_k = chol(R_sys,"lower")*randn(3,1);
+        %measnoise_k = chol(R_meas,"lower")*randn(2,1);
+        [w_k,e_k,xi_k] = noises(R_meas,R1eta, xi_k);
         u_k = -L*zk;
-        z_kplus1 = A*zk + B*u_k + noise_k;
+        z_kplus1 = A*zk + B*u_k + w_k;%noise_k;
         state(step,sim,:) = zk;
-        output(step,sim,:) = H*zk + measnoise_k;
+        output(step,sim,:) = H*zk + e_k; %measnoise_k;
         control(step,sim,:) = u_k;
         zk = z_kplus1;
     end
